@@ -1,2 +1,2 @@
 # WaveHeaderManipulation
-A library for manipulating, reading and writing wavefiles.
+Tools and scripts for changing headers of wave files
