@@ -4,12 +4,59 @@
 #include <fstream>
 #include <iostream>
 #include <cstdlib>
-#include "WaveReader.hpp"
-#include <filesystem>
+#include "WaveFileReader.h"
+
+constexpr size_t DEFAULT_CHUNK_SIZE = 4;
+
+
+void WaveFileReader::ReadHeader(const std::string& filePath)
+{
+    WaveHeader header;
+
+    // stream reader
+    std::ifstream inStream(filePath, std::ifstream::binary);
+    const auto start = inStream.tellg();
+
+    // Read RIFF
+    inStream.read(reinterpret_cast<char *>(&header.RIFF), sizeof(header.RIFF));
+
+    // read WAVE
+    inStream.read(reinterpret_cast<char *>(&header.WAVE), sizeof(uint32_t));
+
+    // read JUNK
+    inStream.read(reinterpret_cast<char *>(&header.JUNK), sizeof(header.JUNK));
+    
+    //TODO:
+        
+
+
+    // =============================================================
+    // LOGGING
+    // =============================================================
+    for (size_t i = 0; i < sizeof(header.RIFF.ID); i++)
+    {
+        std::cout << header.RIFF.ID[i];
+    }
+    std::cout << std::endl;
+
+    // std::cout << "RIFF: " << header.RIFF.ID<< std::endl;
+    std::cout << "File size: " << header.RIFF.size<< std::endl;
+
+    // std::cout << "WAVE: " << header.WAVE<< std::endl;
+    for (size_t i = 0; i < sizeof(header.WAVE); i++)
+    {
+        std::cout << header.WAVE[i];
+    }
+    std::cout << std::endl;
+
+    std::cout << "JUNK: " << header.JUNK.ID << std::endl;
+    std::cout << "JUNK size: " << header.JUNK.size << std::endl;
+    // =============================================================
+}
+
 
 void WaveFileReader::ReadFile(const std::string &in_name)
 {
-    pathToFile = std::filesystem::path(in_name);
     std::ifstream inStream(in_name, std::ifstream::binary);
     const auto start = inStream.tellg();
     inStream.seekg(0, std::ios::end);
@@ -19,24 +66,18 @@ void WaveFileReader::ReadFile(const std::string &in_name)
 
     char temp;
     char startF = 'f';
-    char startM = 'm';
     char startD = 'd';
     m_fmtIndex = -1;
     int dataIndex = -1;
 
-    for (int i = 0; i < RAW_HEADER_LENGTH; i++)
+    for (int i = 0; i < 150; i++)
     {
         inStream.read(reinterpret_cast<char *>(&temp), sizeof(char));
         Info.RawHeaderBuffer[i] = temp;
 
         if (m_fmtIndex == -1 && temp == startF)
         {
-            i++;
-            inStream.read(reinterpret_cast<char *>(&temp), sizeof(char));
-            Info.RawHeaderBuffer[i] = temp;
-            
-            if (temp == startM)
-                m_fmtIndex = i-1;
+            m_fmtIndex = i;
         }
 
         if (dataIndex == -1 && temp == startD)
@@ -45,23 +86,30 @@ void WaveFileReader::ReadFile(const std::string &in_name)
             Info.RawHeaderSize = i + 8;
             Info.DataStartIndex = Info.RawHeaderSize;
         }
-        if (dataIndex != -1 && i > dataIndex + 8)
-            break;
     }
 
+    char* buf = Info.RawHeaderBuffer;
+
+    int32_t sizeFile = (buf[4] & 0xFF) |
+                      ((buf[5] & 0xFF) << 8) |
+                      ((buf[6] & 0xFF) << 16) |
+                      ((buf[7] & 0xFF) << 24);
+
+    std::cout << "file size " << sizeFile << std::endl;
+    std::cout << "file length" << fileLength << std::endl;
 
     if (m_fmtIndex == -1)
     {
+        std::cout << "no fmt index found" << std::endl;
         return;
     }
 
     if (dataIndex == -1)
     {
+        std::cout << "no data found" << std::endl;
         return;
     }
 
-    char* buf = Info.RawHeaderBuffer;
-    
     Info.AudioFormat = (buf[m_fmtIndex + 8] & 0xFF) |
                        ((buf[m_fmtIndex + 9] & 0xFF) << 8);
 
@@ -83,11 +131,11 @@ void WaveFileReader::ReadFile(const std::string &in_name)
 
     Info.BitsPerSample = (buf[m_fmtIndex + 22] & 0xFF) |
                          ((buf[m_fmtIndex + 23] & 0xFF) << 8);
-    
-    Info.DataSize = static_cast<int32_t>((buf[dataIndex + 4] & 0xFF) |
+
+    Info.DataSize = (buf[dataIndex + 4] & 0xFF) |
                     ((buf[dataIndex + 5] & 0xFF) << 8) |
                     ((buf[dataIndex + 6] & 0xFF) << 16) |
-                    ((buf[dataIndex + 7] & 0xFF) << 24));
+                    ((buf[dataIndex + 7] & 0xFF) << 24);
 
 
     Info.LengthInMs = (((static_cast<float>(Info.DataSize) /
@@ -98,10 +146,6 @@ void WaveFileReader::ReadFile(const std::string &in_name)
     inStream.seekg(Info.DataStartIndex, std::ios::beg);
     int chunkSize = Info.BlockAlign / Info.Channels;
     LengthOfData = Info.DataSize / chunkSize;
-    
-    if (Data != nullptr)
-        delete Data;
-    
     Data = new int32_t[LengthOfData];
 
     int sampleIndex = 0;
@@ -136,11 +180,29 @@ void WaveFileReader::ReadFile(const std::string &in_name)
                 sample |= 0x000000FF;
             }
         }
+
         Data[sampleIndex] = sample;
         ++sampleIndex;
     }
 }
 
+void WaveFileReader::TrimBeginning(int lengthInSamples)
+{
+    int dataSizeToCut = lengthInSamples * Info.Channels;
+    int32_t sizeInBytes = dataSizeToCut * (Info.BitsPerSample / 8);
+    int32_t newSize = Info.DataSize - sizeInBytes;
+
+    int32_t* newData = new int32_t[dataSizeToCut];
+    int newDataIndex = 0;
+    for (int i = LengthOfData - dataSizeToCut; i < LengthOfData; ++i)
+    {
+        newData[newDataIndex] = Data[i];
+    }
+
+    std::cout << Info.DataSize << std::endl;
+//    Info.DataSize
+//    int32_t
+}
 
 void WaveFileReader::ChangeSampleRate(int newSampleRate)
 {
@@ -156,44 +218,9 @@ void WaveFileReader::ChangeSampleRate(int newSampleRate)
     }
 }
 
-void WaveFileReader::ChangeChannels(int newChannels)
-{
-    char newSample[2];
-    newSample[0] = newChannels & 0xFF;
-    newSample[1] = (newChannels >> 8) & 0xFF;
-
-    for (size_t i = 0; i < 2; i++)
-    {
-        Info.RawHeaderBuffer[m_fmtIndex + 10 + i] = newSample[i];
-    }
-}
-
-void WaveFileReader::ChangeBitDepth(int newChannels)
-{
-    char newSample[2];
-    newSample[0] = newChannels & 0xFF;
-    newSample[1] = (newChannels >> 8) & 0xFF;
-
-    for (size_t i = 0; i < 2; i++)
-    {
-        Info.RawHeaderBuffer[m_fmtIndex + 22 + i] = newSample[i];
-    }
-}
-
 void WaveFileReader::WriteFile(const std::string &out_name)
 {
-    
-    auto oldFilePath = pathToFile.string();
-    
-    size_t lastindex = oldFilePath.find_last_of(".");
-    std::string iteration = std::to_string(++iterator);
-    iteration = std::string("_") + iteration;
-    std::string newFileName = oldFilePath.substr(0, lastindex) + out_name + iteration + std::string(".wav");
-    
-    auto newPathToFile = pathToFile;
-    newPathToFile.replace_filename(newFileName);
-    
-    std::ofstream out(newPathToFile.string(), std::ofstream::binary);
+    std::ofstream out(out_name, std::ofstream::binary);
     int chunkSize = Info.BlockAlign / Info.Channels;
 
     char temp;
