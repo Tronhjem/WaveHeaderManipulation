@@ -3,4 +3,6 @@
 .vscode/
 build/
 *.wav
+cpp/WaveManipulator/*
+*.xcodeproj
 

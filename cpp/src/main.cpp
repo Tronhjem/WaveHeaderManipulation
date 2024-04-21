@@ -4,7 +4,7 @@
 
 int main()
 {
-    std::string folderPath = "/Users/christiantronhjem/dev/WaveManipulator/";
+    std::string folderPath = "/Users/christiantronhjem/dev/WaveHeaderManipulation/cpp/testfiles/";
     std::string inFilePath = folderPath + "beep.wav";
     std::string outFilePath = folderPath + "beep_Manipulated.wav";
 

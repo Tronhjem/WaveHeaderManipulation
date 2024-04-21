@@ -8,6 +8,32 @@
 
 constexpr size_t DEFAULT_CHUNK_SIZE = 4;
 
+enum CHUNK_TYPE
+{
+    UNDEFINED = 0,
+    JUNK = 1,
+    FMT = 2,
+    DATA = 3
+};
+
+CHUNK_TYPE CheckChunkType(const IDChunk& idToCheck)
+{
+    if (idToCheck.ID[0] == 'J' && idToCheck.ID[1] == 'U')
+    {
+        return CHUNK_TYPE::JUNK;
+    }
+    else if(idToCheck.ID[0] == 'f' && idToCheck.ID[1] == 'm')
+    {
+        return CHUNK_TYPE::FMT;
+    }
+    else if(idToCheck.ID[0] == 'd' && idToCheck.ID[1] == 'a')
+    {
+        return CHUNK_TYPE::DATA;
+    }
+
+    return CHUNK_TYPE::UNDEFINED;
+}
+
 
 void WaveFileReader::ReadHeader(const std::string& filePath)
 {
@@ -18,16 +44,42 @@ void WaveFileReader::ReadHeader(const std::string& filePath)
     const auto start = inStream.tellg();
 
     // Read RIFF
-    inStream.read(reinterpret_cast<char *>(&header.RIFF), sizeof(header.RIFF));
+    inStream.read(reinterpret_cast<char*>(&header.RIFF), sizeof(header.RIFF));
 
     // read WAVE
-    inStream.read(reinterpret_cast<char *>(&header.WAVE), sizeof(uint32_t));
+    inStream.read(reinterpret_cast<char*>(&header.WAVE), sizeof(uint32_t));
 
-    // read JUNK
-    inStream.read(reinterpret_cast<char *>(&header.JUNK), sizeof(header.JUNK));
-    
-    //TODO:
-        
+    bool running = true;
+    while (running)
+    {
+        IDChunk tempID;
+        inStream.read(reinterpret_cast<char *>(&tempID), sizeof(tempID));
+
+        CHUNK_TYPE chunkType = CheckChunkType(tempID);
+
+        if (chunkType == CHUNK_TYPE::JUNK)
+        {
+            header.JUNK = tempID;
+            const auto position = inStream.tellg();
+            inStream.seekg(header.JUNK.size + position);
+            const auto newposition = inStream.tellg();
+            std::cout << newposition << std::endl;
+        }
+        else if(chunkType == CHUNK_TYPE::FMT)
+        {
+            header.FMT = tempID;
+            inStream.read(reinterpret_cast<char*>(&header.fmtData), sizeof(header.fmtData));
+        }
+        else if(chunkType == CHUNK_TYPE::DATA)
+        {
+            header.DATA = tempID;
+            running = false;
+        }
+        else
+        {
+            running = false;
+        }
+    }
 
 
     // =============================================================
@@ -49,9 +101,21 @@ void WaveFileReader::ReadHeader(const std::string& filePath)
     }
     std::cout << std::endl;
 
-    std::cout << "JUNK: " << header.JUNK.ID << std::endl;
+    for (size_t i = 0; i < sizeof(header.JUNK.ID); i++)
+    {
+        std::cout << header.JUNK.ID[i];
+    }
+    std::cout << std::endl;
     std::cout << "JUNK size: " << header.JUNK.size << std::endl;
     // =============================================================
+
+    for (size_t i = 0; i < sizeof(header.FMT.ID); i++)
+    {
+        std::cout << header.FMT.ID[i];
+    }
+    std::cout << std::endl;
+    std::cout << "FMT size: " << header.FMT.size << std::endl;
+
 }
 
 
