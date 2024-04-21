@@ -11,9 +11,14 @@ constexpr size_t DEFAULT_CHUNK_SIZE = 4;
 enum CHUNK_TYPE
 {
     UNDEFINED = 0,
-    JUNK = 1,
-    FMT = 2,
-    DATA = 3
+    JUNK,
+    FMT,
+    DATA,
+    CUE,
+    LIST,
+    LABL,
+    
+    LENGTH,
 };
 
 CHUNK_TYPE CheckChunkType(const IDChunk& idToCheck)
@@ -29,6 +34,14 @@ CHUNK_TYPE CheckChunkType(const IDChunk& idToCheck)
     else if(idToCheck.ID[0] == 'd' && idToCheck.ID[1] == 'a')
     {
         return CHUNK_TYPE::DATA;
+    }
+    else if(idToCheck.ID[0] == 'c' && idToCheck.ID[1] == 'u')
+    {
+        return CHUNK_TYPE::CUE;
+    }
+    else if(idToCheck.ID[0] == 'L' && idToCheck.ID[1] == 'I')
+    {
+        return CHUNK_TYPE::LIST;
     }
 
     return CHUNK_TYPE::UNDEFINED;
@@ -50,7 +63,7 @@ void WaveFileReader::ReadHeader(const std::string& filePath)
     inStream.read(reinterpret_cast<char*>(&header.WAVE), sizeof(uint32_t));
 
     bool running = true;
-    while (running)
+    while (inStream.tellg() < header.RIFF.size)
     {
         IDChunk tempID;
         inStream.read(reinterpret_cast<char *>(&tempID), sizeof(tempID));
@@ -62,8 +75,6 @@ void WaveFileReader::ReadHeader(const std::string& filePath)
             header.JUNK = tempID;
             const auto position = inStream.tellg();
             inStream.seekg(header.JUNK.size + position);
-            const auto newposition = inStream.tellg();
-            std::cout << newposition << std::endl;
         }
         else if(chunkType == CHUNK_TYPE::FMT)
         {
@@ -73,14 +84,36 @@ void WaveFileReader::ReadHeader(const std::string& filePath)
         else if(chunkType == CHUNK_TYPE::DATA)
         {
             header.DATA = tempID;
-            running = false;
+            const auto position = inStream.tellg();
+            inStream.seekg(header.DATA.size + position);
+        }
+        else if (chunkType == CHUNK_TYPE::CUE)
+        {
+            header.CUE = tempID;
+            int lengthOfCuePoints = 0;
+            inStream.read(reinterpret_cast<char*>(&lengthOfCuePoints), sizeof(uint32_t));
+            
+            for (int i = 0; i < lengthOfCuePoints; ++i)
+            {
+                inStream.read(reinterpret_cast<char*>(&header.Cues[i]), sizeof(CUEChunk));
+            }
+        }
+        else if (chunkType == CHUNK_TYPE::LIST)
+        {
+            header.LIST = tempID;
+            int temp = 0;
+            inStream.read(reinterpret_cast<char*(&temp), sizeof(uint32_t));
+            
+            
+            
         }
         else
         {
-            running = false;
+            const auto position = inStream.tellg();
+            inStream.seekg(tempID.size + position, std::ios::beg);
         }
     }
-
+    
 
     // =============================================================
     // LOGGING
